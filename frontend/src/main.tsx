@@ -90,6 +90,7 @@ function Runner(
 		{
 			canvas: HTMLCanvasElement;
 			fsOpen: boolean;
+			LogOpen: boolean;
 			loadState: string;
 			downloadProgress: MinecraftDownloadProgress | null;
 			loadError: string;
@@ -97,6 +98,7 @@ function Runner(
 	>
 ) {
 	this.fsOpen = false;
+	this.LogOpen = true;
 	this.loadState = "Initializing runtime";
 	this.downloadProgress = null;
 	this.loadError = "";
@@ -226,53 +228,71 @@ function Runner(
 					<Icon icon={iconFolderOpen} />
 				</Button>
 			</div>
-			<div class="canvas">
-				<div
-					class="overlay not-ready"
-					class:hidden={use(this.loadState).map((x) => x === "")}
-				>
-					<div class="load-status" role="status">
-						{use(this.loadState)}
-					</div>
+			<div class="canvas-area">
+				<div class="canvas">
 					<div
-						class="download-progress"
-						class:inactive={use(this.downloadProgress).map(
-							(progress) => progress === null
-						)}
+						class="overlay not-ready"
+						class:hidden={use(this.loadState).map((x) => x === "")}
 					>
-						{use(this.downloadProgress).map((progress) => {
-							const value = progressFraction(progress);
-							return value === undefined ? (
-								<progress aria-label="Download progress" max={1} />
-							) : (
-								<progress
-									aria-label="Download progress"
-									max={1}
-									value={value}
-								/>
-							);
-						})}
-						<div class="progress-detail">
-							{use(this.downloadProgress).map(progressText)}
+						<div class="load-status" role="status">
+							{use(this.loadState)}
+						</div>
+						<div
+							class="download-progress"
+							class:inactive={use(this.downloadProgress).map(
+								(progress) => progress === null
+							)}
+						>
+							{use(this.downloadProgress).map((progress) => {
+								const value = progressFraction(progress);
+								return value === undefined ? (
+									<progress aria-label="Download progress" max={1} />
+								) : (
+									<progress
+										aria-label="Download progress"
+										max={1}
+										value={value}
+									/>
+								);
+							})}
+							<div class="progress-detail">
+								{use(this.downloadProgress).map(progressText)}
+							</div>
+						</div>
+						<div
+							class="load-error"
+							class:inactive={use(this.loadError).map((error) => error === "")}
+						>
+							<div role="alert">{use(this.loadError)}</div>
+							<Button type="primary" on:click={start}>
+								Retry
+							</Button>
 						</div>
 					</div>
-					<div
-						class="load-error"
-						class:inactive={use(this.loadError).map((error) => error === "")}
-					>
-						<div role="alert">{use(this.loadError)}</div>
-						<Button type="primary" on:click={start}>
-							Retry
-						</Button>
-					</div>
+					<canvas
+						id="canvas"
+						this={use(this.canvas)}
+						on:contextmenu={(e: Event) => e.preventDefault()}
+					/>
 				</div>
-				<canvas
-					id="canvas"
-					this={use(this.canvas)}
-					on:contextmenu={(e: Event) => e.preventDefault()}
-				/>
 			</div>
-			<LogView scrolling={true} />
+						<div
+				class="log-section"
+				class:collapsed={use(this.LogOpen).map((open) => !open)}
+			>
+				<div class="log-header">
+					<span>Log</span>
+					<Button
+						type="normal"
+						on:click={() => (this.LogOpen = !this.LogOpen)}
+					>
+						{use(this.LogOpen).map((open) => (open ? "Hide log" : "Show log"))}
+					</Button>
+				</div>
+				<div class="log-body">
+					<LogView scrolling={true} />
+				</div>
+			</div>
 			<OpfsExplorer open={use(this.fsOpen)} />
 		</div>
 	);
@@ -321,11 +341,18 @@ Runner.style = css`
 		display: flex;
 		gap: 0.5rem;
 	}
+	.canvas-area {
+		flex: 1;
+		min-height: 0;
+		container-type: size;
+
+		display: flex;
+		align-items: center;
+		justify-content: center;
+	}
 
 	.canvas {
-		align-self: center;
-
-		width: min(100%, calc(60dvh * 854 / 480));
+		width: min(100cqw, calc(100cqh * 854 / 480));
 		height: auto;
 		aspect-ratio: 854 / 480;
 		flex: none;
@@ -402,6 +429,34 @@ Runner.style = css`
 	.hidden {
 		visibility: hidden;
 	}
+	.log-section {
+		flex: none;
+		height: 30dvh;
+		display: flex;
+		flex-direction: column;
+	}
+	.log-section.collapsed {
+		height: auto;
+	}
+	.log-header {
+		padding: 0.5rem 1rem;
+
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+
+		background: var(--bg);
+		border-top: 0.1rem solid var(--surface4);
+	}
+	.log-body {
+		flex: 1;
+		min-height: 0;
+		display: flex;
+		flex-direction: column;
+	}
+	.log-section.collapsed .log-body {
+		display: none;
+	}
 `;
 
 let nameStore = createStore(
@@ -477,6 +532,11 @@ function Launcher(
 				<a href="https://github.com/r58playz/ikvmcraft" target="_blank">
 					GitHub
 				</a>
+				& the cracked code is available on {" "}
+				<a href="https://github.com/omaribnzakaria/ikvmcraft">
+					Github too!
+				</a>
+				& also <a href="https://discord.gg/97hwEbFc9x">join the dev server</a>
 				. NOT AN OFFICIAL MINECRAFT PRODUCT. NOT APPROVED BY OR ASSOCIATED WITH
 				MOJANG OR MICROSOFT.
 			</p>
