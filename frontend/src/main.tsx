@@ -1,4 +1,4 @@
-import { ComponentInstance, css, FC, Stateful } from "dreamland/core";
+import { ComponentInstance, css, FC } from "dreamland/core";
 import "./style.css";
 import { initDotnet, play, dotnetState, MinecraftAuthInfo } from "./dotnet";
 import { loglisteners } from "./dotnet/log";
@@ -12,13 +12,6 @@ import { OpfsExplorer } from "./fs";
 import { Button, Icon } from "./ui/Button";
 import { TextField } from "./ui/TextField";
 import { createStore } from "dreamland/util";
-import {
-	getProfile,
-	minecraftAuth,
-	refreshToken,
-	startDeviceCodeAuth,
-	Token,
-} from "./auth";
 import iconDns from "@ktibow/iconset-material-symbols/dns-outline";
 import iconCode from "@ktibow/iconset-material-symbols/code";
 import iconFolderOpen from "@ktibow/iconset-material-symbols/folder-open";
@@ -78,7 +71,7 @@ LogView.style = css`
 `;
 
 function Logo(this: FC) {
-	return <span>ikvmcraft</span>;
+	return <span>ikvmcraftcracked</span>;
 }
 Logo.style = css`
 	:scope {
@@ -278,7 +271,6 @@ function Runner(
 					this={use(this.canvas)}
 					on:contextmenu={(e: Event) => e.preventDefault()}
 				/>
-				<div class="overlay waiting">Waiting for game</div>
 			</div>
 			<LogView scrolling={true} />
 			<OpfsExplorer open={use(this.fsOpen)} />
@@ -412,27 +404,14 @@ Runner.style = css`
 	}
 `;
 
-let authStore: Stateful<{
-	token: Token | undefined;
-}> = createStore(
-	{
-		token: undefined,
-	},
-	// Live/SISU tokens belong to a different client ID than the old Entra flow.
-	{ ident: "ikvmcraft-auth-sisu-1", autosave: "auto", backing: "localstorage" }
+let nameStore = createStore(
+	{ name: "" },
+	{ ident: "ikvmcraft-offline-name", autosave: "auto", backing: "localstorage" }
 );
 
-type AuthState =
-	| { type: "loading" }
-	| { type: "ready" }
-	| { type: "authing"; url: string; qr: string }
-	| {
-			type: "done";
-			name: string;
-			uuid: string;
-			token: string;
-	  }
-	| { type: "error"; error: any };
+// Minecraft names: letters, digits, underscore, max 16 chars.
+const sanitizeName = (name: string) =>
+	name.replace(/[^A-Za-z0-9_]/g, "").slice(0, 16);
 
 function Launcher(
 	this: FC<
@@ -443,7 +422,8 @@ function Launcher(
 		},
 		{
 			fsOpen: boolean;
-			authState: AuthState;
+			username: string;
+			confirmed: string;
 		}
 	>
 ) {
@@ -451,87 +431,30 @@ function Launcher(
 		fab = this.fabric;
 
 	this.fsOpen = false;
-	this.authState = { type: "loading" } as AuthState;
+	this.username = nameStore.name;
+	this.confirmed = sanitizeName(nameStore.name);
 
-	let readyToPlay = use(this.authState).map(
-		(x) => import.meta.env.DEV || x.type === "done"
+	let readyToPlay = use(this.confirmed).map(
+		(x) => x !== ""
 	);
 
-	let populateToken = async (token: Token) => {
-		try {
-			let mc = await minecraftAuth(token.access);
-			let info = await getProfile(mc);
-
-			this.authState = {
-				type: "done",
-				name: info.name,
-				uuid: info.id,
-				token: mc,
-			};
-		} catch (err) {
-			this.authState = { type: "error", error: err };
-		}
+	let login = () => {
+		let name = sanitizeName(this.username);
+		if (name === "") return; // ignore empty / all-invalid input
+		this.username = name;
+		this.confirmed = name;
+		nameStore.name = name;
+	};
+	let logout = () => {
+		this.confirmed = "";
 	};
 
-	this.cx.mount = async () => {
-		let token: Token | undefined;
-		if (!(token = authStore.token)) {
-			this.authState = { type: "ready" };
-			return;
-		}
-
-		if (token.expires < Date.now()) {
-			try {
-				authStore.token = token = await refreshToken(token.refresh);
-			} catch (e) {
-				this.authState = { type: "error", error: e };
-				return;
-			}
-		}
-
-		await populateToken(token);
-	};
-
-	let auth = async () => {
-		try {
-			let deviceCodeAuth = await startDeviceCodeAuth();
-			this.authState = {
-				type: "authing",
-				url: deviceCodeAuth.link_url,
-				qr: deviceCodeAuth.qr_svg_uri,
-			};
-
-			let token = await deviceCodeAuth.token;
-			authStore.token = token;
-			await populateToken(token);
-		} catch (err) {
-			this.authState = { type: "error", error: err };
-		}
-	};
-	let deauth = async () => {
-		authStore.token = undefined;
-		this.authState = { type: "ready" };
-	};
-
-	let authInfo = (): MinecraftAuthInfo => {
-		if (this.authState.type === "done") {
-			return {
-				playerName: this.authState.name,
-				uuid: this.authState.uuid,
-				accessToken: this.authState.token,
-				userType: "msa",
-			};
-		}
-		if (import.meta.env.DEV) {
-			return {
-				playerName: "ikvmcraft",
-				uuid: "",
-				accessToken: "0",
-				userType: "legacy",
-			};
-		}
-		throw new Error("no auth");
-	};
+	let authInfo = (): MinecraftAuthInfo => ({
+		playerName: this.confirmed,
+		uuid: "",
+		accessToken: "0",
+		userType: "legacy",
+	});
 
 	return (
 		<div>
@@ -545,8 +468,7 @@ function Launcher(
 				allowing for full mods support but resulting in some performance loss.
 			</p>
 			<p>
-				You will need to own Minecraft on a Microsoft account and sign in to use
-				this port. It will download Minecraft automatically into the browser
+				It will download Minecraft automatically into the browser
 				filesystem before launching. The port supports all versions of Minecraft
 				from 1.13 to 26.2, with more coming soon.
 			</p>
@@ -560,37 +482,28 @@ function Launcher(
 			</p>
 			<h2>Authentication</h2>
 			<div class="auth">
-				<Button type="normal" icon="left" on:click={deauth}>
-					<Icon icon={iconLogout} />
-					Log Out
-				</Button>
-				<div>
-					{use(this.authState).map((x) => {
-						if (x.type === "loading") return <span>Loading auth state...</span>;
-						else if (x.type === "ready")
-							return (
-								<Button type="primary" icon="left" on:click={auth}>
-									<Icon icon={iconLogin} />
-									Log In
-								</Button>
-							);
-						else if (x.type === "done")
-							return <span>Logged in as {x.name}</span>;
-						else if (x.type === "authing")
-							return (
-								<div>
-									<div>
-										Log in at{" "}
-										<a href={x.url} target="_blank">
-											{x.url}
-										</a>
-									</div>
-									<img class="qr" src={x.qr} />
-								</div>
-							);
-						else if (x.type === "error") return <span>Error: {x.error}</span>;
-					})}
-				</div>
+				{use(this.confirmed).map((name) =>
+					name === "" ? (
+						<div class="login-row">
+							<TextField
+								value={use(this.username)}
+								placeholder="Username"
+							/>
+							<Button type="primary" icon="left" on:click={login}>
+								<Icon icon={iconLogin} />
+								Log In
+							</Button>
+						</div>
+					) : (
+						<div class="login-row">
+							<span>Logged in as {name}</span>
+							<Button type="normal" icon="left" on:click={logout}>
+								<Icon icon={iconLogout} />
+								Log Out
+							</Button>
+						</div>
+					)
+				)}
 			</div>
 			<h2>Play</h2>
 			<div class="settings">
@@ -662,6 +575,12 @@ Launcher.style = css`
 		height: 16rem;
 		padding: 1rem;
 		background: white;
+	}
+
+	.auth .login-row {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
 	}
 `;
 
